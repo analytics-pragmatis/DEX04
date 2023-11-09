@@ -14,6 +14,7 @@ from pulp import LpVariable, LpMinimize, LpProblem, lpSum,LpBinary
 import time
 import math
 
+# teste 02
 
 ###
 world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
