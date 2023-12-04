@@ -1,5 +1,6 @@
 import streamlit as st
 import streamlit_nested_layout
+from streamlit_extras.stylable_container import stylable_container 
 import pandas as pd
 import numpy as np
 import openpyxl
@@ -78,11 +79,11 @@ def veto_points(points, base_data, distancia_em_km): #altera aqui pra mudar dist
 
 
 @st.cache_data 
-def simulando (df_base_clientes,vetoed_grid_df,i,subcoords):
+def simulando (geral, FTE_max, FTE_backoffice, FTE_min, tempo_limite, breakeven_mm, rd_restr, distancia_de_veto, distancia_pontos_grid, bg_shape, modelo_pontos_candidatos, raio_max, df_base_clientes,vetoed_grid_df,i,subcoords):
     
-    st.write(subcoords)
+    st.write(f"**{subcoords}**")
     subcoords =  subcoords
-    geral = pd.DataFrame({'lat':[],'long':[],'latitude_centro':[], 'longitude_centro':[], 'cluster_centro':[], 'SubCoord':[]})
+    #geral = pd.DataFrame({'lat':[],'long':[],'latitude_centro':[], 'longitude_centro':[], 'cluster_centro':[], 'SubCoord':[]})
     cont = 1
     sub = []
     status = []
@@ -143,18 +144,23 @@ def simulando (df_base_clientes,vetoed_grid_df,i,subcoords):
     for i in range(4):
         FTE_max_aux.append(sorted(FTE_max)[-1])
 
+    texto_restricoes = []
     while ((status_ != OptimizationStatus.FEASIBLE and status_ != OptimizationStatus.OPTIMAL) and num_tentativas <= num_tentativas <= (len(FTE_max_aux))):
 
     #  print(f'Testando com FTE = {fte_suporte +0.41}...')
 
         if num_tentativas == len(FTE_max):
             print("Restrição de raio removida para obtenção da solução ótima")
+            texto_restricoes.append("raio")
         elif num_tentativas == len(FTE_max) + 1:
             print("Restrição de FTE mínimo removida para obtenção da solução ótima")
+            texto_restricoes.append("FTE mínimo")
         elif num_tentativas == len(FTE_max) + 2:
             print("Restrição de FTE máximo removida para obtenção da solução ótima")
+            texto_restricoes.append("FTE máximo")
         elif num_tentativas == len(FTE_max) + 3:
             print("Restrição de breakeven removida para obtenção da solução ótima")
+            texto_restricoes.append("breakeven")
 
 
         vec_suporte = FTE_max_aux
@@ -225,7 +231,12 @@ def simulando (df_base_clientes,vetoed_grid_df,i,subcoords):
 
 
     if status_ == OptimizationStatus.OPTIMAL or status_ == OptimizationStatus.FEASIBLE:
-        #st.success(f'Tem solução com FTE = {fte_suporte+0.41}, e o tempo de solução foi de {round(tempo_final-tempo_inicial,0)}s', icon="✅")
+        if len(texto_restricoes) == 0:
+            st.success(f'Tem solução com FTE = {fte_suporte+0.41}, e o tempo de solução foi de {round(tempo_final-tempo_inicial,0)}s', icon="✅")
+        elif len(texto_restricoes) == 1:
+            st.warning(f"Foi achada uma solução com FTE = {fte_suporte+0.41} e tempo de solução de {round(tempo_final-tempo_inicial,0)}s, porém, para isso teve de ser removida a restrição de raio", icon="❗")
+        else:
+            st.warning(f"Foi achada uma solução com FTE = {fte_suporte+0.41} e tempo de solução de {round(tempo_final-tempo_inicial,0)}s, porém, para isso tiveram de ser removidas as restrições de {', '.join(texto_restricoes[:-1])} e {texto_restricoes[-1]}", icon="❗")
         # st.write(f'--> TEM SOLUÇÃO COM FTE = {fte_suporte+0.41} ')
 
         # st.write("--> tempo de solução =",round(tempo_final-tempo_inicial,0))
@@ -315,8 +326,7 @@ def simulando (df_base_clientes,vetoed_grid_df,i,subcoords):
         points_to_be_served_2['FTE Cliente - total'] = points_to_be_served_2['FTE Cliente - sem backoffice'] + points_to_be_served_2['FTE Cliente - backoffice']
 
     else:
-        st.write(f'--> SEM SOLUÇÃO COM FTE = {fte_suporte+0.41}')
-
+        st.warning(f"Não foram encontradas soluçãoes, com FTE = {fte_suporte+0.41}", icon="❗")
     return  points_to_be_served_2,info_otim,df_otim
 
 
@@ -404,7 +414,16 @@ with tab1:
 
     st.markdown("### Configuração:")
     st.write('Altere os parâmetros abaixo para realizar ajustes no simulador, em caso do modelo não encontrar solução para um determinado FTE desejado, recomendamos fortemente alterar o raio máximo de atendimento e o breakeven. Sempre que possível, verifique se não há nenhum ponto ponto outlier foram da região de análise desejada na aba "visualização".')
-    with st.expander('', expanded=True):
+    
+    with stylable_container(
+        key="container_with_border",
+        css_styles="""
+            {
+                border: 1px solid rgba(49, 51, 63, 0.2);
+                border-radius: 0.5rem;
+                padding: calc(1em - 1px)
+            }
+            """,):
         col1, col2 = st.columns([1,1])
         with col1:
             st.write("**Logística:**")
@@ -506,7 +525,7 @@ with tab1:
         
 
 
-        with open("DEX04 - FTE_Sede_NaoSede v4_Sem_DURA_DA_ENG.xlsx", "rb") as template_file:
+        with open("./auxiliares/DEX04 - FTE_Sede_NaoSede v4_Sem_DURA_DA_ENG.xlsx", "rb") as template_file:
             template_byte = template_file.read()
 
         excel_data = template_byte
@@ -545,8 +564,10 @@ with tab1:
         st.dataframe(df_base_clientes, height = 210, hide_index=True)
 
         lista_subcoords = list(set(list(df_base_clientes['SubCoord_TOBE'])))
-        subcoords_ = st.multiselect('Subcoords',sorted(lista_subcoords),lista_subcoords[0:4])
-
+        try:
+            subcoords_ = st.multiselect('Subcoords',sorted(lista_subcoords),lista_subcoords[0:4])
+        except:
+            st.error("Alguma subcoord foi inserida com um valor inválido na base, por favor corrija", icon="🚨")
         
 
         criar_visao_grid = st.checkbox("Utilizar essas subcoords:")
@@ -554,8 +575,10 @@ with tab1:
 
         if criar_visao_grid:
 
-            list_grid_ , list_veto, df_metric = visoes_grid_(df_base_clientes,subcoords_)
-
+            try: 
+                list_grid_ , list_veto, df_metric = visoes_grid_(df_base_clientes,subcoords_)
+            except:
+                st.error("Há algum erro de sintaxe na sua base, corrija para prosseguir com o processo.", icon="🚨")
             st.divider()
             st.markdown("### Simulador:")
             st.write("""
@@ -565,27 +588,29 @@ with tab1:
 
             st.write("##### Painel de subcoords: ")
 
-            for subcoord in subcoords_:
+            try:
+                for subcoord in subcoords_:
+                        
+                    st.write(f"**{subcoord}:**")
+
+                    col1, col2, col3,col4 = st.columns(4)
                     
-                st.write(f"**{subcoord}:**")
+                    # Definindo o problema:
+                    col1.metric("Número de Potenciais Vendedores",df_metric['num_potenciais_vendedores'][df_metric['subcoord'] == subcoord])
+                    col2.metric("Número de Clientes", df_metric['num_clientes'][df_metric['subcoord'] == subcoord])
+                    col3.metric("FTE Total de Atendimento", df_metric['FTE_total'][df_metric['subcoord'] == subcoord])
+                    col4.metric("Número de Vendedores Máximo", df_metric['num_vendedores_max'][df_metric['subcoord'] == subcoord])
 
-                col1, col2, col3,col4 = st.columns(4)
-                
-                # Definindo o problema:
-                col1.metric("Número de Potenciais Vendedores",df_metric['num_potenciais_vendedores'][df_metric['subcoord'] == subcoord])
-                col2.metric("Número de Clientes", df_metric['num_clientes'][df_metric['subcoord'] == subcoord])
-                col3.metric("FTE Total de Atendimento", df_metric['FTE_total'][df_metric['subcoord'] == subcoord])
-                col4.metric("Número de Vendedores Máximo", df_metric['num_vendedores_max'][df_metric['subcoord'] == subcoord])
-
-                st.write("\n")
-
+                    st.write("\n")
+            except:
+                st.error("Há algum erro de sintaxe na sua base, corrija para prosseguir com o processo.", icon="🚨")
             simular = st.button("Simular Cenários TO BE")
-
+            
             if simular:
-                
+
                 st.write("##### Resultados:")
 
-                geral = pd.DataFrame({'lat':[],'long':[],'latitude_centro':[], 'longitude_centro':[], 'cluster_centro':[], 'SubCoord':[]})
+                geral = pd.DataFrame()
                 cont = 1
                 sub = []
                 status = []
@@ -595,8 +620,19 @@ with tab1:
                     
                     subcoords = subcoords_[i]
                     with st.spinner(f"Simulando {subcoords_[i]}"):
-                        df_cluster, info_otim, df_otim = simulando(df_base_clientes,list_veto[i],i,subcoords)
+                        try:
+                            df_cluster, info_otim, df_otim = simulando(geral, FTE_max, FTE_backoffice, FTE_min, tempo_limite, breakeven_mm, rd_restr, distancia_de_veto, distancia_pontos_grid, bg_shape, modelo_pontos_candidatos, raio_max, df_base_clientes,list_veto[i],i,subcoords)
+                        except:
+                            st.error("Ocorreu um erro na simulação", icon="🚨")
+                    df_cluster_union = df_cluster.copy()
+                    df_cluster_union['SubCoord'] = [subcoords for _ in range(len(df_cluster))]
 
+                    if i == 0:
+                        geral = df_cluster_union
+                    else:
+                        geral  = pd.concat([geral, df_cluster_union], ignore_index=True)
+
+                    
                     df_otim['ROL Total'] = df_otim['ROL Total'].apply(lambda x: f'R${x/1000000:.1f}MM')
                     df_otim[['Lat - Cluster', 'Lon - Cluster', 'Lat - CM', 'Lon - CM']] = df_otim[['Lat - Cluster', 'Lon - Cluster', 'Lat - CM', 'Lon - CM']].applymap(lambda x: round(x, 2))
                     # st.dataframe(df_otim, hide_index=True)
@@ -607,7 +643,7 @@ with tab1:
                         center=dict(lat=-15, lon=-56),
                         zoom=3.9
                     ),
-)
+                    )
                     fig1 = px.scatter_mapbox(df_cluster, lat="lat", lon="long", height=400,width = 950, color='cluster', hover_data=["Nome rede_ Ajustado", "Nome PDV_Ajustado"])
                     fig1.update_layout(layout)
                     # st.plotly_chart(fig1)
@@ -646,10 +682,10 @@ with tab1:
 
 
                     # st.dataframe(df_cluster, height = 210, hide_index=True)
-                    with st.expander(f"**{subcoords_[i]}**", expanded=False):
+                    with st.expander(f"**Mostrar resultados**", expanded=False):
                         st.write("**Visão geral:**")
-                        st.dataframe(df_otim, hide_index=True)
-
+                        st.dataframe(df_otim, hide_index=True, use_container_width=True)
+                        #st.table(df_otim)
                         st.write("**Mapa por vendedores TO BE:**")
                         st.plotly_chart(fig1)
 
@@ -673,90 +709,182 @@ with tab1:
                         )
 
                         st.write("\n")
+                st.write("### Base de dados geral, com todas as subcoords simuladas: ")
+                st.dataframe(geral, height = 210, hide_index=True)   
 
-                        
+                # Botao de instalacao da planilha em Excel
+                output_geral = io.BytesIO()
+                with pd.ExcelWriter(output_geral, engine='xlsxwriter') as writer:
+                    geral.to_excel(writer, sheet_name='Sheet1')
 
+                output_geral.seek(0)  # Volte para o início do arquivo antes de obter os bytes
+
+                excel_data_geral = output_geral.getvalue()
+
+                # Função para codificar o arquivo Excel em base64
+                def get_base64_of_bin_file(bin_file):
+                    return base64.b64encode(bin_file).decode()
+
+                # Codificar o arquivo Excel em base64
+                b64_excel_geral = get_base64_of_bin_file(excel_data_geral)
+                
+                download_link_geral = f'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64_excel_geral}'
+
+                st.markdown(
+                    f"""
+                    <div style="text-align: left;">
+                        <a href="{download_link_geral}" download="DEX_GTM.xlsx" style="text-decoration: none;">
+                            <div style="background-color: #858585; color: white; padding: 8px 20px; border-radius: 5px; display: inline-block;">
+                                Download da tabela geral em Excel
+                            </div>
+                        </a>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                st.write("\n")
         with tab2:
-
+            try:
             
 
-            layout = go.Layout(
-            mapbox=dict(
-            style="carto-darkmatter",
-            center=dict(lat=-15, lon=-55),
-            zoom=3
-            ),
-            )
+                layout = go.Layout(
+                mapbox=dict(
+                style="carto-darkmatter",
+                center=dict(lat=-15, lon=-55),
+                zoom=3
+                ),
+                )
 
-            
-            st.write("### Mapa de clientes por subcoord: ")
-            st.write("Observe no mapa abaixo a disposição de clientes por subcoord de acordo com a base de dados inserida, caso queira observar uma subcoord especifica, clique na legenda do mapa. Verifique com atenção caso haja algum cliente outlier presente dentro da base (i.e. com lat long errada).")
-
-            fig_base_line = px.scatter_mapbox(df_base_clientes, lat="lat", lon="long",color =  'SubCoord_TOBE',height = 600,width=1050, hover_data=["Nome PDV_Ajustado"])
-            fig_base_line.update_layout(layout)
-            st.plotly_chart(fig_base_line)
-            
-
-            if criar_visao_grid:
-                st.divider()
-                st.write("### Visualização das subcoords a serem analisadas")
-                st.write("Abaixo temos três visualizações disponíveis: (1) Mapa da subcoord com clientes por vendedores, (2) Visualização do grid de potenciais clientes e (3) Visualização dos potenciais centros de vendedores. Observe a visualização final dos potenciais centros de vendedores, caso ela cubra uma área maior do que esperada é sinal de que há outliers na base.\nSelecione a subcoord desejada:")
-
-                subcoord_mapa = st.radio(
-                "Subcoord:",
-                options=list(subcoords_))
-
-            else:
-                subcoord_mapa = False
-
-            if subcoord_mapa and criar_visao_grid:
-
-                # Visualização dos clientes
-                for subcoord in subcoords_:
-                    df_para_viz_ASIS= df_base_clientes.query(f'SubCoord_TOBE =="{subcoord_mapa}"') #### TESTE123
-
-                    layout = go.Layout(
-                        mapbox=dict(
-                            style="carto-darkmatter",
-                            center=dict(lat=-15, lon=-55),
-                            zoom=3.2
-                        ),
-                    )
-
-                fig1_2 = px.scatter_mapbox(df_para_viz_ASIS, lat="lat", lon="long",color = "Base Pessoal AS IS' - Final",height = 600, width=1050, hover_data=["Nome PDV_Ajustado"])
-                fig1_2.update_layout(layout)
                 
-                st.write("**Mapa por vendedores TO BE:**")
-                st.plotly_chart(fig1_2)
+                st.write("### Mapa de clientes por subcoord: ")
+                st.write("Observe no mapa abaixo a disposição de clientes por subcoord de acordo com a base de dados inserida, caso queira observar uma subcoord especifica, clique na legenda do mapa. Verifique com atenção caso haja algum cliente outlier presente dentro da base (i.e. com lat long errada).")
 
-                grid_df = list_grid_[subcoords_.index(subcoord_mapa)]
-                vetoed_grid_df = list_veto[subcoords_.index(subcoord_mapa)]
 
-                # Crie os mapas separadamente
-                fig3 = px.scatter_mapbox(grid_df, lat="lat", lon="long", height=500,width = 550)
-                fig2 = px.scatter_mapbox(vetoed_grid_df, lat="lat", lon="long", height=500, width = 550)
-     
-                # Atualize o layout comum
+                fig_base_line = px.scatter_mapbox(df_base_clientes, lat="lat", lon="long",color =  'SubCoord_TOBE',height = 600,width=1050, hover_data=["Nome PDV_Ajustado"])
+                fig_base_line.update_layout(layout)
+                st.plotly_chart(fig_base_line)
                 
-                fig2.update_layout(layout)
-                fig3.update_layout(layout)
 
-                with st.expander("Detalhamento - potenciais centros de vendedores:", expanded=False):
-                    col3, col3_5, col4 = st.columns([5,1,5])
+                if criar_visao_grid:
+                    st.divider()
+                    st.write("### Visualização das subcoords a serem analisadas")
+                    st.write("Abaixo temos três visualizações disponíveis: (1) Mapa da subcoord com clientes por vendedores, (2) Visualização do grid de potenciais clientes e (3) Visualização dos potenciais centros de vendedores. Observe a visualização final dos potenciais centros de vendedores, caso ela cubra uma área maior do que esperada é sinal de que há outliers na base.\nSelecione a subcoord desejada:")
 
-                    with col3:
-                        st.write("**Grid dos potenciais centros de vendedores:**")
-                        st.plotly_chart(fig3)
-                    with col4:
-                        st.write("**Potenciais centros de vendedores:**")
-                        st.plotly_chart(fig2)
+                    
+                    subcoord_mapa = st.radio(
+                    "Subcoord:",
+                    options=list(subcoords_))
 
-    
+                    if 'geral' in locals():
+                        with st.expander("Mapa por vendedores e por subcoord TO BE", expanded = False):
+                            subcoord_select = st.radio(
+                            "**Subcoords:**",
+                            options=geral['SubCoord'].unique())
+                            fig2_1 = px.scatter_mapbox(geral[geral['SubCoord'] == subcoord_select], lat="lat", lon="long",height=400,width = 950, color='cluster', hover_data=["Nome rede_ Ajustado", "Nome PDV_Ajustado"])
+                            fig2_1.update_layout(layout)
+                            
+                            st.plotly_chart(fig2_1)
+                    
+                else:
+                    subcoord_mapa = False
+
+                if subcoord_mapa and criar_visao_grid:
+
+                    # Visualização dos clientes
+                    for subcoord in subcoords_:
+                        df_para_viz_ASIS= df_base_clientes.query(f'SubCoord_TOBE =="{subcoord_mapa}"') #### TESTE123
+
+                        layout = go.Layout(
+                            mapbox=dict(
+                                style="carto-darkmatter",
+                                center=dict(lat=-15, lon=-55),
+                                zoom=3.2
+                            ),
+                        )
+
+                    fig1_2 = px.scatter_mapbox(df_para_viz_ASIS, lat="lat", lon="long",color = "Base Pessoal AS IS' - Final",height = 600, width=1050, hover_data=["Nome PDV_Ajustado"])
+                    fig1_2.update_layout(layout)
+                    
+                    st.write("**Mapa por vendedores TO BE:**")
+                    st.plotly_chart(fig1_2)
+
+                    grid_df = list_grid_[subcoords_.index(subcoord_mapa)]
+                    vetoed_grid_df = list_veto[subcoords_.index(subcoord_mapa)]
+
+                    # Crie os mapas separadamente
+                    fig3 = px.scatter_mapbox(grid_df, lat="lat", lon="long", height=500,width = 550)
+                    fig2 = px.scatter_mapbox(vetoed_grid_df, lat="lat", lon="long", height=500, width = 550)
+        
+                    # Atualize o layout comum
+                    
+                    fig2.update_layout(layout)
+                    fig3.update_layout(layout)
+
+                    with st.expander("Detalhamento - potenciais centros de vendedores:", expanded=False):
+                        col3, col3_5, col4 = st.columns([5,1,5])
+
+                        with col3:
+                            st.write("**Grid dos potenciais centros de vendedores:**")
+                            st.plotly_chart(fig3)
+                        with col4:
+                            st.write("**Potenciais centros de vendedores:**")
+                            st.plotly_chart(fig2)
+                    flag_mapa = False
+                    if 'geral' in locals():
+                        with st.expander("Mapa por vendedores e por subcoord TO BE", expanded = False):
+                            # subcoord_select = st.radio(
+                            # "**Subcoords:**",
+                            # options=geral['SubCoord'].unique())
+                            fig2_1 = px.scatter_mapbox(geral[geral['SubCoord'] == subcoord_mapa], lat="lat", lon="long",height=400,width = 950, color='cluster', hover_data=["Nome rede_ Ajustado", "Nome PDV_Ajustado"])
+                            fig2_1.update_layout(layout)
+                            
+                            st.plotly_chart(fig2_1)
+            except:
+                st.error("Há valores ausentes ou inválidos de latitude e/ou longitude na base", icon="🚨")
+
     with tab3:
+
 
         st.write(" Esta ferramenta foi desenvolvida exclusivamente para a Dexco pela Pragmatis. Ela tem como objetivo otimizar a setorização de clientes,foi desenvolvida durante o projeto DEX04 - Implementação da Estrutura Comercial. \n  \n Todos os direitos são reservados à Pragmatis e a Dexco.")
 
+        # Lê o arquivo PDF como bytes
+        with open("./auxiliares/manual_testes_dexco_vazio.pdf", "rb") as pdf_file:
+            pdf_data = pdf_file.read()
+
+        # Função para codificar o arquivo PDF em base64
+        def get_base64_of_pdf_file(pdf):
+            return base64.b64encode(pdf).decode()
+
+        # Codificar o arquivo PDF em base64
+        b64_pdf = get_base64_of_pdf_file(pdf_data)
+
+        # Criar o link de download para o arquivo PDF
+        download_link_pdf = f'data:application/pdf;base64,{b64_pdf}'
+
+        st.write("**Em caso de dúvidas de uso da ferramenta, consulte o manual:**")
+        # Estilo de botão visual
+        st.markdown(
+            f"""
+            <div style="text-align: left;">
+                <a href="{download_link_pdf}" download="manual_dexco.pdf" style="text-decoration: none;">
+                    <div style="background-color: #858585; color: white; padding: 8px 20px; border-radius: 5px; display: inline-block;">
+                        Download do manual de uso
+                    </div>
+                </a>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.write("\n")
+
         st.info("Em caso de dúvidas, contate: analytics@pragmatis.com.br")
 
+        col1, col2, col3, col4, col5 = st.columns([1,1,1,1,1])
+        with col2:
+            st.image("./auxiliares/dexco-logo.png", width=200)
 
+        with col4:
+            st.image("./auxiliares/pragmatis-logo.png", width=200)
             
